@@ -8,10 +8,24 @@ import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 export class AuthService {
   constructor(private prisma: PrismaService) {}
 
-  signin() {
-    return {
-      msg: 'You are now signed in!',
-    };
+  async signin(dto: AuthDto) {
+    //find the user
+    const user = await this.prisma.user.findUnique({
+      where: {
+        email: dto.email,
+      },
+    });
+    //if != exit throw err
+    if (!user) throw new ForbiddenException('Incorrect Credentials.');
+
+    //compare passwords
+    const passMatch = await argon.verify(user.hash, dto.password);
+    //if pass != match throw wrong err
+    if (!passMatch) throw new ForbiddenException('Incorrent Credentials');
+    //signin if successfull, send the user
+    const {hash, ...noHashUser} = user;
+    return noHashUser;
+
   }
 
   async signup(dto: AuthDto) {
@@ -24,25 +38,18 @@ export class AuthService {
           email: dto.email,
           hash,
         },
-        select: {
-          id: true,
-          email: true,
-          firstName: true,
-          lastName: true,
-          createdAt: true,
-          updatedAt: true,
-        },
       });
 
       // return the new user
-      return user;
+      const {hash: _, ...noHashUser} = user;
+      return noHashUser;
     } catch (err) {
-        if (err instanceof PrismaClientKnownRequestError) {
-            if(err.code === 'P2002'){
-                throw new ForbiddenException('Crendtials Taken.')
-            }
+      if (err instanceof PrismaClientKnownRequestError) {
+        if (err.code === 'P2002') {
+          throw new ForbiddenException('Crendtials Taken.');
         }
-        throw err;
+      }
+      throw err;
     }
   }
 }
